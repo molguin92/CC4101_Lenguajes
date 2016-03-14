@@ -1,0 +1,4 @@
+#lang plai
+
+;; fibs :: Int -> Int
+;; Fibonacci numbers

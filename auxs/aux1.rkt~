@@ -1,0 +1,17 @@
+#lang plai
+
+;; fibs :: Int -> Int
+;; Fibonacci numbers
+
+(define (fibs n)
+  (cond
+    [(or (= n 1) (= n 2)) 1]
+    [else (+ (fibs (- n 1)) (fibs (- n 2)) )]
+    )
+  )
+
+(test (fibs 1) 1)
+(test (fibs 2) 1)
+(test (fibs 3) 2)
+(test (fibs 4) 3)
+
