@@ -9,4 +9,12 @@ Ejemplo, largo de una lista
         0
         (add1 (length (rest l)))))
 ```
+#Pattern matching
 
+Match permite hacer matching extensivo de patrones, strings, constructores...
+```racket
+(match "hola"
+    ["hola" 1]
+    ["chao" 1])
+> 1
+```
