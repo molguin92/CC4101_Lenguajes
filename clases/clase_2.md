@@ -18,3 +18,12 @@ Match permite hacer matching extensivo de patrones, strings, constructores...
     ["chao" 1])
 > 1
 ```
+
+#Defición de tipos
+
+Para definir tipos:
+```racket
+(deftype BinTree
+    (leaf)
+    (node value right left))
+```
