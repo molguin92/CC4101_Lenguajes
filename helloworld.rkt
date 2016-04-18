@@ -1,3 +1,3 @@
 #!/usr/bin/env racket
-#lang racket
+#lang play
 (printf "~s~n" "hello world!")
