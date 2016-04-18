@@ -34,6 +34,7 @@
 (test (parse #f) (bool #f))
 (test (parse 42) (num 42))
 (test (parse 'x) (id 'x))
+(test (parse '{{+ 1 3} {- 3 1}}) (list (add (num 1) (num 3)) (sub (num 3) (num 1))))
 (test (parse '{+ 1 3}) (add (num 1) (num 3)))
 (test (parse '{- 3 1}) (sub (num 3) (num 1)))
 (test (parse '{with {x : Num 5} {+ x 3}}) (app (fun 'x (TNum) (add (id 'x) (num 3)) #f) (num 5)))
@@ -41,6 +42,7 @@
 
 ;; deBruijn
 (test (deBruijn (num 3)) (num 3))
+(test (deBruijn (parse '{with {x : Num 2} {+ 1 x}})) (app (fun-db (add (num 1) (acc 0))) (num 2)))
 (test (deBruijn (parse '{with {x : Num 5}  {with  {y : Num  {+ x 1}} {+ y x}}}))
       (app (fun-db (app (fun-db (add (acc 0) (acc 1))) (add (acc 0) (num 1)))) (num 5)))
 (test/exn (deBruijn (parse 'x)) "Free identifier: x")
