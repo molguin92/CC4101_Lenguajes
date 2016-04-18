@@ -170,6 +170,8 @@
 
 |#
 
+(define (compile expr) #f)
+
 (define (typeof expr) #f)
 
 (define (typecheck s-expr) #f)
