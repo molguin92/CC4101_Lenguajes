@@ -166,7 +166,7 @@ molguin@dcc.uchile.cl
 
 
 ; type->string : Type -> String
-; Converts a Type intro a string
+; Converts a Type into a string
 (define (type->string t)
     (match t
         [(TNum) "Num"]
