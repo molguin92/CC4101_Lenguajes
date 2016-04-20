@@ -160,7 +160,6 @@
         [(TFun arg ret) (string-append "{" (type->string arg) " -> " (type->string ret) "}")]
         [else (error "Missing type.")]))
 
-
 (define (type-error op pos et at)
     (error (string-append "Type error in expression " op " position " (number->string pos) ": expected " (type->string et) " found " (type->string at))))
 
@@ -197,48 +196,68 @@
                 t
                 (env-lookup-type x env2))]))
 
-(define (typeof-env expr env)
-    (match expr
-        [(num n) (TNum)]
-        [(bool b) (TBool)]
-        [(id s) (env-lookup-type s env)]
-        [(add l r) (typever-arithmetic (typeof-env l env) (typeof-env r env) "add")]
-        [(sub l r) (typever-arithmetic (typeof-env l env) (typeof-env r env) "sub")]
-        [(my-eq l r) (typever-comp (typeof-env l env) (typeof-env r env) "my-eq")]
-        [(my-less l r) (typever-comp (typeof-env l env) (typeof-env r env) "my-less")]
-        [(my-and l r) (typever-bool (typeof-env l env) (typeof-env r env) "my-and")]
-        [(my-or l r) (typever-bool (typeof-env l env) (typeof-env r env) "my-or")]
-        [(my-not e) (typever-bool (typeof-env e env) (TBool) "my-not")]
-        [(my-if c tb fb) (typever-if (typeof-env c env) (typeof-env tb env) (typeof-env fb env))]
-        [(fun id targ body tbody)
-            (let ([atbody (typeof-env body (aEnv id targ #f env))])
-                (if (not (equal? atbody tbody))
-                    (type-error "fun" 3 tbody atbody)
-                    atbody
-                    ))]
-        [(app (fun id targ body tbody) arg-expr)
-            (let ([atarg (typeof-env arg-expr env)])
-                (if (not (equal? targ  atarg))
-                    (type-error "app" 2 targ atarg)
-                    (typeof-env (fun id targ body tbody) env)
-                    ))]
-        ))
+(define (typeof-env expr env readable)
+    (if readable
+        ; output in more human readable format
+        (match expr
+            [(num n) (TNum)]
+            [(bool b) (TBool)]
+            [(id s) (env-lookup-type s env)]
+            [(add l r) (typever-arithmetic (typeof-env l env readable) (typeof-env r env readable) "+")]
+            [(sub l r) (typever-arithmetic (typeof-env l env readable) (typeof-env r env readable) "-")]
+            [(my-eq l r) (typever-comp (typeof-env l env readable) (typeof-env r env readable) "=")]
+            [(my-less l r) (typever-comp (typeof-env l env readable) (typeof-env r env readable) "<")]
+            [(my-and l r) (typever-bool (typeof-env l env readable) (typeof-env r env readable) "and")]
+            [(my-or l r) (typever-bool (typeof-env l env readable) (typeof-env r env readable) "or")]
+            [(my-not e) (typever-bool (typeof-env e env readable) (TBool) "not")]
+            [(my-if c tb fb) (typever-if (typeof-env c env readable) (typeof-env tb env readable) (typeof-env fb env readable))]
+            [(fun id targ body tbody)
+                (let ([atbody (typeof-env body (aEnv id targ #f env) readable)])
+                    (if (not (equal? atbody tbody))
+                        (type-error "fun" 3 tbody atbody)
+                        (TFun targ atbody)
+                        ))]
+            [(app (fun id targ body tbody) arg-expr)
+                (let ([atarg (typeof-env arg-expr env readable)])
+                    (if (not (equal? targ  atarg))
+                        (type-error "app" 2 targ atarg)
+                        (TFun-ret (typeof-env (fun id targ body tbody) env readable)) ; apply function -> only type that matters is return type
+                        ))])
+        ; less human readable format
+        (match expr
+            [(num n) (TNum)]
+            [(bool b) (TBool)]
+            [(id s) (env-lookup-type s env)]
+            [(add l r) (typever-arithmetic (typeof-env l env readable) (typeof-env r env readable) "add")]
+            [(sub l r) (typever-arithmetic (typeof-env l env readable) (typeof-env r env readable) "sub")]
+            [(my-eq l r) (typever-comp (typeof-env l env readable) (typeof-env r env readable) "my-eq")]
+            [(my-less l r) (typever-comp (typeof-env l env readable) (typeof-env r env readable) "my-less")]
+            [(my-and l r) (typever-bool (typeof-env l env readable) (typeof-env r env readable) "my-and")]
+            [(my-or l r) (typever-bool (typeof-env l env readable) (typeof-env r env readable) "my-or")]
+            [(my-not e) (typever-bool (typeof-env e env readable) (TBool) "my-not")]
+            [(my-if c tb fb) (typever-if (typeof-env c env readable) (typeof-env tb env readable) (typeof-env fb env readable))]
+            [(fun id targ body tbody)
+                (let ([atbody (typeof-env body (aEnv id targ #f env) readable)])
+                    (if (not (equal? atbody tbody))
+                        (type-error "fun" 3 tbody atbody)
+                        (TFun targ atbody)
+                        ))]
+            [(app (fun id targ body tbody) arg-expr)
+                (let ([atarg (typeof-env arg-expr env readable)])
+                    (if (not (equal? targ  atarg))
+                        (type-error "app" 2 targ atarg)
+                        (TFun-ret (typeof-env (fun id targ body tbody) env readable)) ; apply function -> only type that matters is return type
+                        ))])))
+
+
 
 (define (typeof expr)
-    (typeof-env expr (mtEnv)))
+    (typeof-env expr (mtEnv) #f))
 
-#|
-(my-eq l r)
-(my-less l r)
-(my-and l r)
-        (my-or l r)
-        (my-not e)
-        (my-if c tb fb)
-        (id s)
-        (fun id targ body tbody)
-        (app fun-id arg-expr))
-|#
+(define (typecheck expr)
+    (string->symbol (type->string (typeof-env (parse expr) (mtEnv) #t))))
 
-(define (typecheck s-expr) #f)
-
-(define (typed-compile s-expr) #f)
+(define (typed-compile s-expr)
+    (let ([pexpr (parse s-expr)])
+        (typeof-env pexpr (mtEnv) #t) ; check types
+        (compile pexpr)))
