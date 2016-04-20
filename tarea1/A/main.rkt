@@ -1,6 +1,17 @@
 #lang play
 (require "machine.rkt")
 (print-only-errors #t)
+
+
+#|
+Tarea 1 - CC4101 Lenguajes de Programación
+Manuel Olguín
+18.274.982-6
+molguin@dcc.uchile.cl
+|#
+
+
+
 ;;;;;;;;;;;;;;;;;;;;;;;
 ;; Language definition
 ;;;;;;;;;;;;;;;;;;;;;;;
@@ -60,6 +71,7 @@
         ['Bool (TBool)]
         [(list l '-> r) (TFun (parse-type l) (parse-type r))]
         [else (error "Parse error")]))
+
 
 ; parse : Src -> Expr
 ; Parses source code into a valid Expr
@@ -147,56 +159,95 @@
         [(my-or l r) (append (compile r) (compile l) (list (OR)))]
         [(my-not e) (append (compile e) (list (NOT)))]
         [(my-if c tb fb) (append (compile c) (list (IF (compile tb) (compile fb))))]
-        [(fun-db body)  (CLOSURE (append (compile body) (RETURN)))]
-        [(app fun-id arg-expr) (append (compile arg-expr) (compile fun-id) (list (APPLY) (RETURN)))]
+        [(fun-db body)  (list (CLOSURE (append (compile body) (list (RETURN)))))]
+        [(app fun-id arg-expr) (append (compile arg-expr) (compile fun-id) (list (APPLY)))]
         [(list e1 e2) (append (compile e2) (compile e1) (list (APPLY) (RETURN)))]
         [else (error "Compilation error.")]))
 
 
+; type->string : Type -> String
+; Converts a Type intro a string
 (define (type->string t)
     (match t
         [(TNum) "Num"]
         [(TBool) "Bool"]
         [(TFun arg ret) (string-append "{" (type->string arg) " -> " (type->string ret) "}")]
-        [else (error "Missing type.")]))
-
-(define (type-error op pos et at)
-    (error (string-append "Type error in expression " op " position " (number->string pos) ": expected " (type->string et) " found " (type->string at))))
+        [else (error "Missing type ~s" t)]))
 
 
-(define (typever tl tr et rt op)
-    (cond
-        [(and (equal? tr  tl) (equal? tl  et)) rt] ; tipos coinciden
-        [(not (equal? tl  et)) (type-error op 1 et tl)]
-        [else (type-error op 2 et tr)]))
-
-
-(define (typever-arithmetic tl tr op)
-    (typever tl tr (TNum) (TNum) op))
-
-
-(define (typever-comp tl tr op)
-    (typever tl tr (TNum) (TBool) op))
-
-
-(define (typever-bool tl tr op)
-    (typever tl tr (TBool) (TBool) op))
-
-(define (typever-if tc ttb tfb)
-    (cond
-        [(not (equal? tc  (TBool))) (type-error "if" 1 (TBool) tc)]
-        [(not (equal? ttb  tfb)) (type-error "if" 3 ttb tfb)]
-        [else ttb]))
-
-(define (env-lookup-type x env)
-    (match env
-        [(mtEnv) (error "Type error in expression id position 1: No type for identifier ~a" x)]
-        [(aEnv id t val env2)
-            (if (symbol=? id x)
-                t
-                (env-lookup-type x env2))]))
-
+; typeof-env : Expr x Env x Bool -> Type
+; Finds the Type of a given Expr, using the given Env for identifier
+; lookup (using the env-lookup-type function).
+; The readable parameter indicates if function names should be in "human readable" format
+; (eg +, -, <, and) or not (eg my-if, my-and, add, sub).
 (define (typeof-env expr env readable)
+
+    ; env-lookup-type : Symbol x Env -> Type
+    ; Finds the type of an identifier in the environment, or raises
+    ; an error if there is no such identifier.
+    (define (env-lookup-type x environment)
+        (match environment
+            [(mtEnv) (error "Type error in expression id position 1: No type for identifier ~a" x)]
+            [(aEnv id t val env2)
+                (if (symbol=? id x)
+                    t
+                    (env-lookup-type x env2))]))
+
+    ; type-error : String x Num x Type x Type -> Error
+    ; Error builder for the typeof and typecheck functions.
+    ; Creates a beautiful error using the name of the expression,
+    ; the position of the error, and the actual and expected types.
+    (define (type-error op pos et at)
+        (error (string-append
+            "Type error in expression "
+            op
+            " position "
+            (number->string pos)
+            ": expected "
+            (type->string et)
+            " found "
+            (type->string at))))
+
+
+    ; typever : Type x Type x Type x Type x String -> Type
+    ; typever verifies the expected type of an expr.
+    ; It takes the type of the left argument tl, the type
+    ; of the right argument tr, the expected type for both,
+    ; the return type and the operation name, and verifies
+    ; that tl and tr match the expected type et.
+    (define (typever tl tr et rt op)
+        (cond
+            [(and (equal? tr  tl) (equal? tl  et)) rt] ; types match
+            [(not (equal? tl  et)) (type-error op 1 et tl)]
+            [else (type-error op 2 et tr)]))
+
+
+    ; typever-arithmetic : Type x Type x String -> Type
+    ; wrapper for typever, for arithmetic expr as (add a b)
+    (define (typever-arithmetic tl tr op)
+        (typever tl tr (TNum) (TNum) op))
+
+
+    ; typever-comp : Type x Type x String -> Type
+    ; wrapper for typever, for comparison operations as (eq a b)
+    (define (typever-comp tl tr op)
+        (typever tl tr (TNum) (TBool) op))
+
+
+    ; typever-bool : Type x Type x String -> Type
+    ; wrapper for typever, for boolean expr as (and a b)
+    (define (typever-bool tl tr op)
+        (typever tl tr (TBool) (TBool) op))
+
+
+    ; typever-if : Type x Type x Type -> Type
+    ; verifies the correct type of an if expr.
+    (define (typever-if tc ttb tfb)
+        (cond
+            [(not (equal? tc  (TBool))) (type-error "if" 1 (TBool) tc)]
+            [(not (equal? ttb  tfb)) (type-error "if" 3 ttb tfb)]
+            [else ttb]))
+
     (if readable
         ; output in more human readable format
         (match expr
@@ -213,7 +264,7 @@
             [(my-if c tb fb) (typever-if (typeof-env c env readable) (typeof-env tb env readable) (typeof-env fb env readable))]
             [(fun id targ body tbody)
                 (let ([atbody (typeof-env body (aEnv id targ #f env) readable)])
-                    (if (not (equal? atbody tbody))
+                    (if (and (not (equal? tbody  #f)) (not (equal? atbody tbody)))
                         (type-error "fun" 3 tbody atbody)
                         (TFun targ atbody)
                         ))]
@@ -238,7 +289,7 @@
             [(my-if c tb fb) (typever-if (typeof-env c env readable) (typeof-env tb env readable) (typeof-env fb env readable))]
             [(fun id targ body tbody)
                 (let ([atbody (typeof-env body (aEnv id targ #f env) readable)])
-                    (if (not (equal? atbody tbody))
+                    (if (and (not (equal? tbody  #f)) (not (equal? atbody tbody)))
                         (type-error "fun" 3 tbody atbody)
                         (TFun targ atbody)
                         ))]
@@ -250,14 +301,23 @@
                         ))])))
 
 
-
+; typeof : Expr -> Type
+; returns the type of a given Expr
 (define (typeof expr)
     (typeof-env expr (mtEnv) #f))
 
-(define (typecheck expr)
-    (string->symbol (type->string (typeof-env (parse expr) (mtEnv) #t))))
 
+; typeof : Src -> Type
+; Returms the type of a given source code snippet, in a more
+; "human readable" format.
+(define (typecheck s-expr)
+    (string->symbol (type->string (typeof-env (parse s-expr) (mtEnv) #t))))
+
+
+; typed-compile : Src -> List(Instruction)
+; Compiles a piece of source code into machine instructions.
+; It also checks for type errors and correct syntax.
 (define (typed-compile s-expr)
     (let ([pexpr (parse s-expr)])
         (typeof-env pexpr (mtEnv) #t) ; check types
-        (compile pexpr)))
+        (compile (deBruijn pexpr))))
