@@ -93,7 +93,7 @@ Instructions
 |#
 (deftype Instruction
   (INT-CONST n)
-  (BOOL-CONST b)  
+  (BOOL-CONST b)
   (ADD)
   (SUB)
   (LESS)

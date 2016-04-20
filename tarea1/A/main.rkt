@@ -47,6 +47,11 @@
   (TBool)
   (TFun arg ret))
 
+; Environment abstract data type, for identifier lookup
+ (deftype Env
+    (mtEnv)
+    (aEnv id t val env))
+
 ; parse-type : Src -> Type
 ; Parses source code into a Type expression
 (define (parse-type s-expr)
@@ -74,7 +79,7 @@
         [(list 'fun (list i ': t) e) (fun i (parse-type t) (parse e) #f)]
         [(list 'fun (list i ': t1) ': t2 e) (fun i (parse-type t1) (parse e) (parse-type t2))]
         [(list 'with (list i ': t e1) e2) (app (parse (list 'fun (list i ': t) e2)) (parse e1))]
-        [(list e1 e2) (list (parse e1) (parse e2))]
+        [(list e1 e2) (app (parse e1) (parse e2))]
         [else (error "Parse error")]))
 
 
@@ -126,53 +131,113 @@
         [(app fun-id arg-expr) (app (deBruijn fun-id) (deBruijn arg-expr))]
         [else expr]))
 
-#|
-(define (compile-return expr)
-    (match expr
-        [(num n) (list (INT-CONST n) (RETURN))]
-        [(bool b) (list (BOOL-CONST b) (RETURN))]
-        [(acc n) (list (ACCESS n) (RETURN))]
-        [(add l r) (list (compile-rec r) (compile-rec l) (ADD) (RETURN))]
-        [(sub l r) (list (compile-rec r) (compile-rec l) (SUB) (RETURN))]
-        [(my-eq l r) (list (compile-rec r) (compile-rec l) (EQ) (RETURN))]
-        [(my-less l r) (list (compile-rec r) (compile-rec l) (LESS) (RETURN))]
-        [(my-and l r) (list (compile-rec r) (compile-rec l) (AND) (RETURN))]
-        [(my-or l r) (list (compile-rec r) (compile-rec l) (OR) (RETURN))]
-        [(my-not e) (list (compile-rec e) (NOT) (RETURN))]
-        [(my-if c tb fb) (list (compile-rec c) (IF (compile-rec tb) (compile-rec fb)) (RETURN))]
-        [(fun-db body) (list (CLOSURE (compile-return body)) (RETURN))]
-        [(app fun-id arg-expr) (list (compile-rec arg-expr) (compile-rec fun-id) (APPLY) (RETURN))]
-        [(list e1 e2) (list (compile-rec e2) (compile-rec e1) (APPLY) (RETURN))]
-        [else (error "Compilation error.")]))
 
-(define (compile-rec expr)
-    (print expr)
-    (printf "~n")
-    (match expr
-        [(num n) (INT-CONST n)]
-        [(bool b) (BOOL-CONST b)]
-        [(acc n) (ACCESS n)]
-        [(add l r) (values (compile-rec r) (compile-rec l) (ADD))]
-        [(sub l r) (values (compile-rec r) (compile-rec l) (SUB))]
-        [(my-eq l r) (values (compile-rec r) (compile-rec l) (EQ))]
-        [(my-less l r) (values (compile-rec r) (compile-rec l) (LESS))]
-        [(my-and l r) (values (compile-rec r) (compile-rec l) (AND))]
-        [(my-or l r) (values (compile-rec r) (compile-rec l) (OR))]
-        [(my-not e) (values (compile-rec e) (NOT))]
-        [(my-if c tb fb) (values (compile-rec c) (IF (compile-rec tb) (compile-rec fb)))]
-        [(fun-db body) (CLOSURE (compile-return body))]
-        [(app fun-id arg-expr) (values (compile-rec arg-expr) (compile-rec fun-id) (APPLY))]
-        [(list e1 e2) (values (compile-rec e2) (compile-rec e1) (APPLY))]
-        [else (error "Compilation error.")]))
-
+; compile : Expr -> List(Instruction)
+; Turns a correct Expr into a list of instructions for the virtual machine.
 (define (compile expr)
-    (call-with-values (lambda () (compile-rec expr)) list))
+    (match expr
+        [(num n) (list (INT-CONST n))]
+        [(bool b) (list (BOOL-CONST b))]
+        [(acc n) (list (ACCESS n))]
+        [(add l r) (append (compile r) (compile l) (list (ADD)))]
+        [(sub l r) (append (compile r) (compile l) (list (SUB)))]
+        [(my-eq l r) (append (compile r) (compile l) (list (EQ)))]
+        [(my-less l r) (append (compile r) (compile l) (list (LESS)))]
+        [(my-and l r) (append (compile r) (compile l) (list (AND)))]
+        [(my-or l r) (append (compile r) (compile l) (list (OR)))]
+        [(my-not e) (append (compile e) (list (NOT)))]
+        [(my-if c tb fb) (append (compile c) (list (IF (compile tb) (compile fb))))]
+        [(fun-db body)  (CLOSURE (append (compile body) (RETURN)))]
+        [(app fun-id arg-expr) (append (compile arg-expr) (compile fun-id) (list (APPLY) (RETURN)))]
+        [(list e1 e2) (append (compile e2) (compile e1) (list (APPLY) (RETURN)))]
+        [else (error "Compilation error.")]))
 
+
+(define (type->string t)
+    (match t
+        [(TNum) "Num"]
+        [(TBool) "Bool"]
+        [(TFun arg ret) (string-append "{" (type->string arg) " -> " (type->string ret) "}")]
+        [else (error "Missing type.")]))
+
+
+(define (type-error op pos et at)
+    (error (string-append "Type error in expression " op " position " (number->string pos) ": expected " (type->string et) " found " (type->string at))))
+
+
+(define (typever tl tr et rt op)
+    (cond
+        [(and (equal? tr  tl) (equal? tl  et)) rt] ; tipos coinciden
+        [(not (equal? tl  et)) (type-error op 1 et tl)]
+        [else (type-error op 2 et tr)]))
+
+
+(define (typever-arithmetic tl tr op)
+    (typever tl tr (TNum) (TNum) op))
+
+
+(define (typever-comp tl tr op)
+    (typever tl tr (TNum) (TBool) op))
+
+
+(define (typever-bool tl tr op)
+    (typever tl tr (TBool) (TBool) op))
+
+(define (typever-if tc ttb tfb)
+    (cond
+        [(not (equal? tc  (TBool))) (type-error "if" 1 (TBool) tc)]
+        [(not (equal? ttb  tfb)) (type-error "if" 3 ttb tfb)]
+        [else ttb]))
+
+(define (env-lookup-type x env)
+    (match env
+        [(mtEnv) (error "Type error in expression id position 1: No type for identifier ~a" x)]
+        [(aEnv id t val env2)
+            (if (symbol=? id x)
+                t
+                (env-lookup-type x env2))]))
+
+(define (typeof-env expr env)
+    (match expr
+        [(num n) (TNum)]
+        [(bool b) (TBool)]
+        [(id s) (env-lookup-type s env)]
+        [(add l r) (typever-arithmetic (typeof-env l env) (typeof-env r env) "add")]
+        [(sub l r) (typever-arithmetic (typeof-env l env) (typeof-env r env) "sub")]
+        [(my-eq l r) (typever-comp (typeof-env l env) (typeof-env r env) "my-eq")]
+        [(my-less l r) (typever-comp (typeof-env l env) (typeof-env r env) "my-less")]
+        [(my-and l r) (typever-bool (typeof-env l env) (typeof-env r env) "my-and")]
+        [(my-or l r) (typever-bool (typeof-env l env) (typeof-env r env) "my-or")]
+        [(my-not e) (typever-bool (typeof-env e env) (TBool) "my-not")]
+        [(my-if c tb fb) (typever-if (typeof-env c env) (typeof-env tb env) (typeof-env fb env))]
+        [(fun id targ body tbody)
+            (let ([atbody (typeof-env body (aEnv id targ #f env))])
+                (if (not (equal? atbody tbody))
+                    (type-error "fun" 3 tbody atbody)
+                    atbody
+                    ))]
+        [(app (fun id targ body tbody) arg-expr)
+            (let ([atarg (typeof-env arg-expr env)])
+                (if (not (equal? targ  atarg))
+                    (type-error "app" 2 targ atarg)
+                    (typeof-env (fun id targ body tbody) env)
+                    ))]
+        ))
+
+(define (typeof expr)
+    (typeof-env expr (mtEnv)))
+
+#|
+(my-eq l r)
+(my-less l r)
+(my-and l r)
+        (my-or l r)
+        (my-not e)
+        (my-if c tb fb)
+        (id s)
+        (fun id targ body tbody)
+        (app fun-id arg-expr))
 |#
-
-(define (compile expr) #f)
-
-(define (typeof expr) #f)
 
 (define (typecheck s-expr) #f)
 

@@ -1,4 +1,4 @@
-#lang play
+#lang plai
 (require "main.rkt")
 (require "machine.rkt")
 (print-only-errors #f)
@@ -24,6 +24,9 @@
          | {<type> -> <type>}
 |#
 
+;; type->string
+(test (type->string (TNum)) "Num")
+(test (type->string (TBool)) "Bool")
 
 ;; parse-type
 (test (parse-type '{Num -> Num}) (TFun (TNum) (TNum)))
@@ -34,7 +37,6 @@
 (test (parse #f) (bool #f))
 (test (parse 42) (num 42))
 (test (parse 'x) (id 'x))
-(test (parse '{{+ 1 3} {- 3 1}}) (list (add (num 1) (num 3)) (sub (num 3) (num 1))))
 (test (parse '{+ 1 3}) (add (num 1) (num 3)))
 (test (parse '{- 3 1}) (sub (num 3) (num 1)))
 (test (parse '{with {x : Num 5} {+ x 3}}) (app (fun 'x (TNum) (add (id 'x) (num 3)) #f) (num 5)))
