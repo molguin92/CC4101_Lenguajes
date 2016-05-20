@@ -201,40 +201,9 @@
                      #f)]
                 [(x y) (error "Match failure")]))
 
-;; run :: s-expr -> number/bool/string/struct
-;; parses and runs source code
+;; run :: s-expr -> number
 (define(run prog)
-  (let ([a (interp (parse prog) empty-env)])
-    (match a
-      [(structV name variant params) (pretty-print a)]
-      [else a]))) 
-
-
-;; bool->string :: bool -> string
-;; auxiliary function, converts a boolean to its' string representation
-(define (bool->string b)
-  (if b
-      "True"
-      "False"))
-
-
-;; pretty-print :: number/bool/string/struct -> string
-;; converts the result of the evaluation of a program into a easily readable string.
-;; it is only called on structs, but can also parse other type of data which could be
-;; contained inside a struct.
-(define (pretty-print pexp)
-  (match pexp
-    [(structV name variant params)
-     (string-append "{" (symbol->string variant) (pretty-print params) "}")]
-    [(? list?)
-     (if (empty? pexp)
-         ""
-         (string-append " " (pretty-print (first pexp)) (pretty-print (rest pexp))))]
-    [(? number?) (number->string pexp)]
-    [(? string?) pexp]
-    [(? bool?) (bool->string pexp)]
-    [else (error "Can't print this shit man.")]
-    ))
+  (interp (parse prog) empty-env))
 
 
 #|-----------------------------
