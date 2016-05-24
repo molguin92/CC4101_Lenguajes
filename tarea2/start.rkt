@@ -65,6 +65,8 @@
   (litP l) ; valor literal
   (constrP ctr patterns)) ; constructor y sub-patrones
 
+
+
 ;; parse :: s-expr -> Expr
 (define(parse s-expr)
   (match s-expr
@@ -204,10 +206,26 @@
 ;; run :: s-expr -> number/bool/string/struct
 ;; parses and runs source code
 (define(run prog)
-  (let ([a (interp (parse prog) empty-env)])
-    (match a
-      [(structV name variant params) (pretty-print a)]
-      [else a]))) 
+  (let* ([ext_prog '{local {{datatype List
+                            {Empty}
+                            {Cons head tail}}
+
+                            ;; length :: datatype List -> Num
+                            ;; returns the length of the given list.
+                            {define length {fun {L}
+                                                {match L
+                                                  {case {Empty} => 0}
+                                                  {case {Cons head tail} => {+ 1 {length tail}}}
+                                                }
+                                            }
+                            }
+                          }
+                    }]
+         [eprog (append ext_prog (list prog))])
+    (let ([a (interp (parse eprog) empty-env)])
+      (match a
+        [(structV name variant params) (pretty-print a)]
+        [else a]))))
 
 
 ;; bool->string :: bool -> string

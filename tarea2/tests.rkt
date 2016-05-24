@@ -1,11 +1,15 @@
-#lang play
+#lang plai
 
 (require "start.rkt")
+(print-only-errors #f)
 ;; Test sub-module.
 ;; See http://blog.racket-lang.org/2012/06/submodules.html
 
 ;this tests should never fail; these are tests for MiniScheme+
 (module+ test
+
+  (printf "RUNNING BASIC TESTS~n")
+  
   (test (run '{+ 1 1}) 2)
 
   (test (run '{{fun {x y z} {+ x y z}} 1 2 3}) 6)
@@ -66,6 +70,9 @@
                                           {case {Succ m} => m}}}}}
                 {Succ? {pred {Succ {Succ {Zero}}}}}})
         #t)
+
+  (printf "RUNNING TESTS FOR EXTENDED MINISCHEME+~n")
+  
   (test (run '{local {{datatype Nat
                                 {Zero}
                                 {Succ n}}
@@ -73,19 +80,18 @@
                                         {match n
                                           {case {Zero} => {Zero}}
                                           {case {Succ m} => m}}}}}
-                {Succ? {pred {Succ {Succ {Zero}}}}}}) #t))
+                {pred {Succ {Succ {Zero}}}}}) "{Succ {Zero}}")
 
-;tests for extended MiniScheme+
-#;(module+ sanity-tests
-    (test (run '{local {{datatype Nat
-                  {Zero}
-                  {Succ n}}
-                {define pred {fun {n}
-                               {match n
-                                 {case {Zero} => {Zero}}
-                                 {case {Succ m} => m}}}}}
-          {pred {Succ {Succ {Zero}}}}}) "{Succ {Zero}}")
+  ;; test for lists
+  (test (run '{List? {Empty}}) #t)
+  (test (run '{List? {Cons 1 {Cons 2 {Cons 3 {Empty}}}}}) #t)
+  (test (run '{length {Empty}}) 0)
+  (test (run '{length {Cons 1 {Cons 2 {Cons 3 {Empty}}}}}) 3)
+  )
 
+;
+#;
+(module+ sanity-tests
 (test (run
  `{local ,stream-lib
           {local {,ones ,stream-take}
@@ -106,4 +112,5 @@
 (test
 (run `{local ,stream-lib
                {local {,stream-take ,merge-sort ,fibs ,stream-zipWith}
-                 {stream-take 10 {merge-sort fibs fibs}}}})   "{list 1 1 1 1 2 2 3 3 5 5}"))
+                 {stream-take 10 {merge-sort fibs fibs}}}})   "{list 1 1 1 1 2 2 3 3 5 5}")
+  )
