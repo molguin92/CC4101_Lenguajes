@@ -70,6 +70,8 @@
 ;; parse :: s-expr -> Expr
 (define(parse s-expr)
   (match s-expr
+    [(list 'list elems ...)
+     (parse (parse-list elems))]
     [(? number?) (num s-expr)]
     [(? boolean?) (bool s-expr)]
     [(? string?) (str s-expr)]
@@ -85,7 +87,17 @@
     [(list f args ...) ; same here
      (if (assq f *primitives*)
          (prim-app f (map parse args)) ; args is a list
-         (app (parse f) (map parse args)))]))
+         (app (parse f) (map parse args)))]
+         ))
+
+;; parse-list :: s-expr -> s-expr
+;; syntactic sugar for {list a b c}: this function parses the elements
+;; of the list into {Cons} structs.
+(define (parse-list elems)
+  (if (empty? elems)
+    '{Empty}
+    (append '{Cons} (list (car elems)) (list (parse-list (cdr elems)))
+    )))
 
 ; parse-def :: s-expr -> Def
 (define(parse-def s-expr)
@@ -106,6 +118,9 @@
 ; parse-pattern :: sexpr -> Pattern
 (define(parse-pattern p)
   (match p
+    ;syntactic sugar for lists in patterns:
+    [(list 'list elems ...)
+     (parse-pattern (parse-list elems))]
     [(? symbol?)  (idP p)]
     [(? number?)  (litP (num p))]
     [(? boolean?) (litP (bool p))]
@@ -243,7 +258,9 @@
 (define (pretty-print pexp)
   (match pexp
     [(structV name variant params)
-     (string-append "{" (symbol->string variant) (pretty-print params) "}")]
+     (match name
+       ['List (string-append "{list" (pretty-print-list pexp) "}")]
+       [else (string-append "{" (symbol->string variant) (pretty-print params) "}")])]
     [(? list?)
      (if (empty? pexp)
          ""
@@ -253,6 +270,16 @@
     [(? bool?) (bool->string pexp)]
     [else (error "Can't print this shit man.")]
     ))
+
+
+(define (pretty-print-list pexp)
+  (match pexp
+    [(structV name variant params)
+     (match variant
+       ['Empty ""]
+       ['Cons (string-append " "
+               (pretty-print (first params))
+               (foldl string-append "" (map pretty-print-list (rest params)) )) ])]))
 
 
 #|-----------------------------

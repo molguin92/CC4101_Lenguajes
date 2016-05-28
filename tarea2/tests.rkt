@@ -87,8 +87,16 @@
   (test (run '{List? {Cons 1 {Cons 2 {Cons 3 {Empty}}}}}) #t)
   (test (run '{length {Empty}}) 0)
   (test (run '{length {Cons 1 {Cons 2 {Cons 3 {Empty}}}}}) 3)
-  )
-
+  (test (run '{List? {list 1 2 3}}) #t)
+  (test(run '{match {list {+ 1 1} 4 6}
+          {case {Cons h r} => h}
+          {case _ => 0}}) 2)
+  (test (run '{match {list {list 1 2} 3 4}
+          {case {Cons {Cons a {Cons b {Empty}}} {Cons c {Cons d {Empty}}}} => b}
+          {case _ => 0}}) 2)
+  (test (run '{match {list 2 {list 4 5} 6}
+          {case {list a {list b c} d} => c}}) 5)
+)
 ;
 #;
 (module+ sanity-tests
