@@ -148,7 +148,7 @@
     ; application
     [(app fun-expr arg-expr-list)
      ((interp fun-expr env)
-      (map (λ (a) (interp a env)) arg-expr-list))]
+      (map (λ (a) (aThunk a env)) arg-expr-list))]
     ; primitive application
     [(prim-app prim arg-expr-list)
      (apply (cadr (assq prim *primitives*))
@@ -271,7 +271,8 @@
     [else (error "Can't print this shit man.")]
     ))
 
-
+;; pretty-print-list :: struct List -> String
+;; auxiliary function, returns the elementos of a list separated by spaces.
 (define (pretty-print-list pexp)
   (match pexp
     [(structV name variant params)
@@ -293,6 +294,9 @@ update-env! :: Sym Val Env -> Void
   (mtEnv)
   (aEnv bindings rest)) ; bindings is a list of pairs (id . val)
 
+(deftype Thunk
+  (aThunk expr env))
+
 (def empty-env  (mtEnv))
 
 (define(env-lookup id env)
@@ -301,11 +305,22 @@ update-env! :: Sym Val Env -> Void
     [(aEnv bindings rest)
      (def binding (assoc id bindings))
      (if binding
-         (cdr binding)
+         (match (cdr binding)
+           [(aThunk expr env) (interp expr env)]
+           [else (cdr binding)])
          (env-lookup id rest))]))
 
-(define (extend-env ids vals env)
-  (aEnv (map cons ids vals) ; zip to get list of pairs (id . val)
+(define (bind-value id thunk)
+  (match id
+    [(list 'lazy i) (cons i thunk)]
+    [else
+     (match thunk
+       [(aThunk expr env) (cons id (interp expr env))]
+       [else (cons id thunk)])]))
+
+
+(define (extend-env ids thunks env)
+  (aEnv (map bind-value ids thunks) ; zip to get list of pairs (id . val)
         env))
 
 ;; imperative update of env, adding/overring the binding for id.

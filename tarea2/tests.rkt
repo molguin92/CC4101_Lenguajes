@@ -96,6 +96,9 @@
           {case _ => 0}}) 2)
   (test (run '{match {list 2 {list 4 5} 6}
           {case {list a {list b c} d} => c}}) 5)
+  (test (run '{list 1 2 3 4 5}) "{list 1 2 3 4 5}")
+  (test (run '{list {list 1 2} {list 3 4 5}}) "{list {list 1 2} {list 3 4 5}}")
+  (test (run '{Cons 1 {Cons 2 {Empty}}}) "{list 1 2}")
 )
 ;
 #;
