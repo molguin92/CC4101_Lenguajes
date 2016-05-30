@@ -99,6 +99,19 @@
   (test (run '{list 1 2 3 4 5}) "{list 1 2 3 4 5}")
   (test (run '{list {list 1 2} {list 3 4 5}}) "{list {list 1 2} {list 3 4 5}}")
   (test (run '{Cons 1 {Cons 2 {Empty}}}) "{list 1 2}")
+
+
+  (test (run '{{fun {x  {lazy y}} x} 1 {/ 1 0}}) 1)
+  (test/exn (run '{{fun {x  y} x} 1 {/ 1 0}}) (error "/: division by zero"))
+  (test (run '{local {{datatype T 
+                  {C {lazy a}}}
+                {define x {C {/ 1 0}}}}
+          {T? x}}) #t)
+  (test/exn (run '{local {{datatype T 
+                  {C {lazy a}}}
+                {define x {C {/ 1 0}}}}
+          {match x
+            {case {C a} => a}}}) (error "/: division by zero"))
 )
 ;
 #;
@@ -124,4 +137,5 @@
 (run `{local ,stream-lib
                {local {,stream-take ,merge-sort ,fibs ,stream-zipWith}
                  {stream-take 10 {merge-sort fibs fibs}}}})   "{list 1 1 1 1 2 2 3 3 5 5}")
+
   )

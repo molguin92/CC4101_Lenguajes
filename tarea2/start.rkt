@@ -178,21 +178,35 @@
 (define(interp-datatype name env)
   ; datatype predicate, eg. Nat?
   (update-env! (string->symbol (string-append (symbol->string name) "?"))
-               (λ (v) (symbol=? (structV-name (first v)) name))
+               (λ (v) (match (first v)
+                        [(aThunk expr env1)
+                         (symbol=? (structV-name (interp expr env)) name)]))
                env))
 
 ; interp-variant :: String String Env -> Void
 (define(interp-variant name var env)
   ;; name of the variant or dataconstructor
   (def varname (variant-name var))
+  (def params (variant-params var))
   ;; variant data constructor, eg. Zero, Succ
   (update-env! varname
-               (λ (args) (structV name varname args))
+               (λ (args) (structV name varname (map interp-param params args)))
                env)
   ;; variant predicate, eg. Zero?, Succ?
   (update-env! (string->symbol (string-append (symbol->string varname) "?"))
-               (λ (v) (symbol=? (structV-variant (first v)) varname))
+               (λ (v) (match (first v)
+                        [(aThunk expr env1)
+                         (symbol=? (structV-variant (interp expr env)) varname)]))
                env))
+
+;; interp-param :: Symbol x Thunk -> Thunk/Expr
+;; matches a parameter of a struct variant with an Thunk for lazy eval.
+;; if the parameter is not lazy, it evaluates the expression and returns it,
+;: otherwise, it returs the Thunk.
+(define (interp-param par arg)
+  (match par
+    [(list 'lazy id) arg]
+    [else (interp (aThunk-expr arg) (aThunk-env arg))]))
 
 ;;;;
 ; pattern matcher
@@ -221,23 +235,20 @@
 ;; run :: s-expr -> number/bool/string/struct
 ;; parses and runs source code
 (define(run prog)
-  (let* ([ext_prog '{local {{datatype List
-                            {Empty}
-                            {Cons head tail}}
-
-                            ;; length :: datatype List -> Num
-                            ;; returns the length of the given list.
-                            {define length {fun {L}
-                                                {match L
-                                                  {case {Empty} => 0}
-                                                  {case {Cons head tail} => {+ 1 {length tail}}}
-                                                }
-                                            }
-                            }
-                          }
-                    }]
-         [eprog (append ext_prog (list prog))])
-    (let ([a (interp (parse eprog) empty-env)])
+  (let ([ext_prog `{local {,list-data
+                           ,list-length}
+                     {local ,stream-lib
+                       {local {,ones
+                               ,zeros
+                               ,zipWith
+                               ,range-stream
+                               ,range
+                               ,nats
+                               ,fibs
+                               ,mergesort}
+                       ,prog}}}])
+         ;;[eprog (append ext_prog (list prog))])
+    (let ([a (interp (parse ext_prog) empty-env)])
       (match a
         [(structV name variant params) (pretty-print a)]
         [else a]))))
@@ -257,6 +268,7 @@
 ;; contained inside a struct.
 (define (pretty-print pexp)
   (match pexp
+    [(aThunk exp env) "{<Delayed execution block>}"]
     [(structV name variant params)
      (match name
        ['List (string-append "{list" (pretty-print-list pexp) "}")]
@@ -268,7 +280,7 @@
     [(? number?) (number->string pexp)]
     [(? string?) pexp]
     [(? bool?) (bool->string pexp)]
-    [else (error "Can't print this shit man.")]
+    [else pexp]
     ))
 
 ;; pretty-print-list :: struct List -> String
@@ -294,6 +306,8 @@ update-env! :: Sym Val Env -> Void
   (mtEnv)
   (aEnv bindings rest)) ; bindings is a list of pairs (id . val)
 
+;; Thunk :: Datatype for storing lazy evaluation data.
+;; Stores an expression with it's associated environment.
 (deftype Thunk
   (aThunk expr env))
 
@@ -310,6 +324,9 @@ update-env! :: Sym Val Env -> Void
            [else (cdr binding)])
          (env-lookup id rest))]))
 
+;; bind-value :: Symbol x Thunk -> Cons ()
+;; Binds an id with its value or, if it's lazy, with a Thunk which stores
+;; the information necessary for future evaluation.
 (define (bind-value id thunk)
   (match id
     [(list 'lazy i) (cons i thunk)]
@@ -318,14 +335,14 @@ update-env! :: Sym Val Env -> Void
        [(aThunk expr env) (cons id (interp expr env))]
        [else (cons id thunk)])]))
 
-
+;; extend-env :: Adds an id to the environment.
 (define (extend-env ids thunks env)
   (aEnv (map bind-value ids thunks) ; zip to get list of pairs (id . val)
         env))
 
 ;; imperative update of env, adding/overring the binding for id.
-(define(update-env! id val env)
-  (set-aEnv-bindings! env (cons (cons id val) (aEnv-bindings env))))
+(define(update-env! id thunk env)
+  (set-aEnv-bindings! env (cons (bind-value id thunk) (aEnv-bindings env))))
 
 ;;;;;;;
 
@@ -348,3 +365,138 @@ update-env! :: Sym Val Env -> Void
     (not     ,(lambda args (apply not args)))
     (and     ,(lambda args (apply (lambda (x y) (and x y)) args)))
     (or      ,(lambda args (apply (lambda (x y) (or x y)) args)))))
+
+
+;; -------------------- MINISCHEME+ EXTENSIONS -------------------
+
+(def list-data
+  ;; List datatype for MiniScheme+
+  '{datatype List
+             {Empty}
+             {Cons head tail}})
+
+(def list-length
+  ;; length :: datatype List -> Num
+  ;; returns the length of the given list.
+  '{define length {fun {L}
+                       {match L
+                         {case {Empty} => 0}
+                         {case {Cons head tail} => {+ 1 {length tail}}}}}})
+
+(def stream-data
+  ;; Lazy Stream datatype.
+  ;; Basically the same as List, except that it doesn't have a base constructor
+  ;; and its tail is lazy.
+  '{datatype Stream
+             {aStream head {lazy tail}}})
+
+(def make-stream
+  ;; make-stream :: Any x Any -> Stream
+  ;; Creates a Stream from the given arguments. Argument y is evaluated in a lazy fashion.
+  '{define make-stream
+     {fun {x {lazy y}}
+          {aStream x y}}})
+
+(def stream-hd
+  ;; stream-hd :: Stream -> Any
+  ;; Returns the head of a Stream.
+  '{define stream-hd
+     {fun {s}
+          {match s
+            {case {aStream head tail} => head}}}})
+
+(def stream-tl
+  ;; stream-tl :: Stream -> Stream/Any
+  ;; Returns the tail of a Stream, which usually is another Stream which continues
+  ;; the operation started by the first one.
+  '{define stream-tl
+     {fun {s}
+          {match s
+            {case {aStream head tail} => tail}}}})
+
+(def stream-take
+  ;; stream-take :: Int x Stream -> List
+  ;; Returns the n first elements of a given Stream.
+  '{define stream-take
+     {fun {n S}
+          {if {< n 1}
+              {Empty}
+              {Cons {stream-hd S} {stream-take {- n 1} {stream-tl S}}}
+              }}})
+
+(def ones
+  ;; ones :: Stream of infinite ones
+  '{define ones {make-stream 1 ones}})
+(def zeros
+  ;; zeros :: Stream of infinite zeros
+  '{define zeros {make-stream 0 zeros}})
+
+(def range-stream
+  ;; range-stream :: Int -> Stream
+  ;; Returns a Stream which starts at the given integer and counts to infinity.
+  '{define range-stream {fun {start}
+                            {make-stream
+                             start
+                             {range-stream {+ 1 start}}}}})
+
+(def range
+  ;; range :: Int x Int -> List
+  ;; Returns an ordered list of every integer in [n, m)
+  `{define range {fun {n m} {stream-take {- m n} {range-stream n}}}})
+
+(def nats
+  ;; Stream which contains all the natural numbers.
+  `{define nats {range-stream 0}})
+
+(def fibfun
+  ;; fibfun :: Int x Int -> Stream
+  ;; Auxiliary function for the definition of the Fibs stream.
+  ;; Returns a Stream node representing the current value of n,
+  ;; based on the two parameters given - (n - 1) and (n - 2).
+  '{define fibfun
+     {fun {n_2 n_1}
+          {if {and {zero? n_2} {zero? n_1}}
+              {make-stream
+               1
+               {fibfun n_1 1}
+               }
+              {make-stream
+               {+ n_1 n_2}
+               {fibfun n_1 {+ n_1 n_2}}}
+              }
+          }
+     })
+
+(def fibs
+  ;; Stream which contains all the numbers in the fibonacci sequence.
+  `{define fibs {local {,fibfun} {fibfun 0 0}}})
+
+(def stream-lib (list stream-data
+                      make-stream
+                      stream-hd
+                      stream-tl
+                      stream-take))
+
+(def zipWith
+  ;; stream-zipWith :: Procedure x Stream x Stream -> Returns
+  ;; Forms a new stream from the given parameters, where the elements of the new
+  ;; stream correspond to the function f applied to every pair of elements in the
+  ;; given streams.
+  '{define stream-zipWith {fun {f l1 l2}
+                               {make-stream
+                                {f {stream-hd l1} {stream-hd l2}}
+                                {stream-zipWith f {stream-tl l1} {stream-tl l2}}
+                                }}})
+
+(def mergesort
+  ;; mergesort :: Stream x Stream -> Stream
+  ;; Takes to ordered streams and returns a new ordered Stream with the elements of both.
+  '{define mergesort {fun {s1 s2}
+                          {if {> {stream-hd s1} {stream-hd s2}}
+                              {make-stream
+                               {stream-hd s2}
+                               {mergesort s1 {stream-tl s2}}}
+                              {make-stream
+                               {stream-hd s1}
+                               {mergesort {stream-tl s1} s2}}}
+                          }})
