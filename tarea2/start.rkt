@@ -1,4 +1,12 @@
 #lang play
+#|
+TAREA 2 CC4101 Lenguajes de Programación
+Manuel Olguín - molguin@dcc.uchile.cl
+This file contains the definition and extensions for
+the MiniScheme+ language.
+|#
+
+
 
 #|
 <expr> ::= <num>
