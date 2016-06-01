@@ -1,7 +1,7 @@
 #lang plai
 #|
-TAREA 2 CC4101 Lenguajes de Programación
-Manuel Olguín - molguin@dcc.uchile.cl
+TAREA 2 CC4101 Lenguajes de Programacion
+Manuel Olguin - molguin@dcc.uchile.cl
 This file contains the tests for the MiniScheme+
 language and its extensions.
 |#
