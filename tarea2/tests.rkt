@@ -158,20 +158,55 @@
   ;; Stream datatype
   (test (run '{Stream? {aStream 1 {/ 1 0}}}) #t)
   (test (run '{Stream? {aStream 1 {aStream 1 {aStream 1 {/ 1 0}}}}}) #t)
+  
   ;;make-stream
   (test (run '{Stream? {make-stream 1 {/ 1 0}}}) #t)
-  (test (run '{local {{define ones1 {make-stream 1 ones1}}} {Stream? ones}}) #t)
-  
+  (test (run '{local {{define ones1 {make-stream 1 ones1}}} {Stream? ones1}}) #t)
+
+  ;;stream-hd and stream-tl
+  (test (run '{stream-hd {aStream #t #f}}) #t)
+  (test (run '{stream-hd {make-stream #t #f}}) #t)
+  (test (run '{stream-hd ones}) 1)
+  (test (run '{stream-tl {aStream #t #f}}) #f)
+  (test (run '{stream-tl {make-stream #t #f}}) #f)
+  (test (run '{stream-tl ones}) "{aStream 1 {<Deferred execution block>}}")
+
+  ;;stream-take
   (test (run '{stream-take 11 ones}) "{list 1 1 1 1 1 1 1 1 1 1 1}")
-  
+  (test (run '{stream-take 3 zeros}) "{list 0 0 0}")
+  ;; natural numbers
+  (test (run '{stream-take 10 nats}) "{list 0 1 2 3 4 5 6 7 8 9}")
+  (test (run '{stream-take 0 ones}) "{list}")
+  ;; fibonacci numbers
   (test (run '{stream-take 10 fibs}) "{list 1 1 2 3 5 8 13 21 34 55}")
-  
+  (test (run '{stream-take 10 {stream-tl ones}}) "{list 1 1 1 1 1 1 1 1 1 1}")
+
+  ;; stream-zipWith
   (test (run '{stream-take 10
                            {stream-zipWith
                             {fun {n m}
                                  {+ n m}}
                             ones
                             ones}})  "{list 2 2 2 2 2 2 2 2 2 2}")
-  
+  (test (run '{stream-take 10
+                           {stream-zipWith
+                            {fun {n m}
+                                 {if {> n m}
+                                     n
+                                     m}}
+                            fibs
+                            nats}})  "{list 1 1 2 3 5 8 13 21 34 55}")
+
+  (test (run '{stream-take 10
+                           {stream-zipWith
+                            {fun {n m}
+                                 {* n m}}
+                            fibs
+                            fibs}})
+        "{list 1 1 4 9 25 64 169 441 1156 3025}")
+
+  ;; merge-sort
   (test (run '{stream-take 10 {merge-sort fibs fibs}})   "{list 1 1 1 1 2 2 3 3 5 5}")
+  (test (run '{stream-take 10 {merge-sort fibs nats}})   "{list 0 1 1 1 2 2 3 3 4 5}")
+  (test (run '{stream-take 10 {merge-sort zeros nats}})  "{list 0 0 0 0 0 0 0 0 0 0}")
   )

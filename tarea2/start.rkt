@@ -287,7 +287,7 @@
 ;; contained inside a struct.
 (define (pretty-print pexp)
   (match pexp
-    [(aThunk exp env) "{<Delayed execution block>}"]
+    [(aThunk exp env) "{<Deferred execution block>}"]
     [(structV name variant params)
      (match name
        ['List (string-append "{list" (pretty-print-list pexp) "}")]
