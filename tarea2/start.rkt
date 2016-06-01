@@ -68,8 +68,10 @@
 
 
 ;; parse :: s-expr -> Expr
+;; Parses source code into a valid expression.
 (define(parse s-expr)
   (match s-expr
+    ; syntactic sugar for {list } notation
     [(list 'list elems ...)
      (parse (parse-list elems))]
     [(? number?) (num s-expr)]
@@ -99,23 +101,28 @@
     (append '{Cons} (list (car elems)) (list (parse-list (cdr elems)))
     )))
 
-; parse-def :: s-expr -> Def
+;; parse-def :: s-expr -> Def
+;; Auxiliary function which parses the defintions inside a {local {}}
+;; statement.
 (define(parse-def s-expr)
   (match s-expr
     [(list 'define id val-expr) (dfine id (parse val-expr))]
     [(list 'datatype name variants ...) (datatype name (map parse-variant variants))]))
 
-; parse-variant :: sexpr -> Variant
+;; parse-variant :: sexpr -> Variant
+;; Parses the variants of a datatype.
 (define(parse-variant v)
   (match v
     [(list name params ...) (variant name params)]))
 
-; parse-case :: sexpr -> Case
+;; parse-case :: sexpr -> Case
+;; Parses the cases of a {match {case }} clause.
 (define(parse-case c)
   (match c
     [(list 'case pattern => body) (cse (parse-pattern pattern) (parse body))]))
 
-; parse-pattern :: sexpr -> Pattern
+;; parse-pattern :: sexpr -> Pattern
+;; Parses the pattern of a {match } clause.
 (define(parse-pattern p)
   (match p
     ;syntactic sugar for lists in patterns:
@@ -128,6 +135,7 @@
     [(list ctr patterns ...) (constrP (first p) (map parse-pattern patterns))]))
 
 ;; interp :: Expr Env -> number/procedure/Struct
+;; Evaluates a previously parsed expr.
 (define(interp expr env)
   (match expr
     ; literals
@@ -148,6 +156,10 @@
     ; application
     [(app fun-expr arg-expr-list)
      ((interp fun-expr env)
+      ;; Lazy eval through the use of Thunks!
+      ;; Note that the expressions is not immediately evaluated,
+      ;; but rather packed into a Thunk along with its env, for
+      ;; future evaluation.
       (map (λ (a) (aThunk a env)) arg-expr-list))]
     ; primitive application
     [(prim-app prim arg-expr-list)
@@ -164,26 +176,29 @@
      (def (cons alist body) (find-first-matching-case value-matched cases))
      (interp body (extend-env (map car alist) (map cdr alist) env))]))
 
-; interp-def :: Def Env -> Void
+;; interp-def :: Def Env -> Void
+;; Evaluates the definitions inside a (lcal).
 (define(interp-def d env)
   (match d
     [(dfine id val-expr)
-     (update-env! id (interp val-expr env) env)]
+     (update-env! id (aThunk val-expr env) env)]
     [(datatype name variants)
      ;; extend environment with new definitions corresponding to the datatype
      (interp-datatype name env)
      (for-each (λ (v) (interp-variant name v env)) variants)]))
 
-; interp-datatype :: String Env -> Void
+;; interp-datatype :: String Env -> Void
+;; Evaluates (structV) clauses.
 (define(interp-datatype name env)
   ; datatype predicate, eg. Nat?
   (update-env! (string->symbol (string-append (symbol->string name) "?"))
                (λ (v) (match (first v)
                         [(aThunk expr env1)
-                         (symbol=? (structV-name (interp expr env)) name)]))
+                         (symbol=? (structV-name (interp expr env1)) name)]))
                env))
 
-; interp-variant :: String String Env -> Void
+;; interp-variant :: String String Env -> Void
+;; Evaluates variants of (structV) elements.
 (define(interp-variant name var env)
   ;; name of the variant or dataconstructor
   (def varname (variant-name var))
@@ -210,6 +225,9 @@
 
 ;;;;
 ; pattern matcher
+
+;; find-first-matching-case :: Expr x List(Expr) -> Cons
+;; Finds the first matching case for a given value.
 (define(find-first-matching-case value cases)
   (match cases
     [(list) #f]
@@ -218,6 +236,8 @@
        [#f (find-first-matching-case value cs)]
        [alist (cons alist body)])]))
 
+;; match-pattern-with-value :: Pattern x Expr -> bool/list
+;; Matches a given pattern with the provided value.
 (define(match-pattern-with-value pattern value)
   (match/values (values pattern value)
                 [((idP i) v) (list (cons i v))]
@@ -235,8 +255,7 @@
 ;; run :: s-expr -> number/bool/string/struct
 ;; parses and runs source code
 (define(run prog)
-  (let ([ext_prog `{local {,list-data
-                           ,list-length}
+  (let ([ext_prog `{local ,list-lib
                      {local ,stream-lib
                        {local {,ones
                                ,zeros
@@ -245,7 +264,7 @@
                                ,range
                                ,nats
                                ,fibs
-                               ,mergesort}
+                               ,merge-sort}
                        ,prog}}}])
          ;;[eprog (append ext_prog (list prog))])
     (let ([a (interp (parse ext_prog) empty-env)])
@@ -255,7 +274,7 @@
 
 
 ;; bool->string :: bool -> string
-;; auxiliary function, converts a boolean to its' string representation
+;; auxiliary function, converts a boolean to its string representation
 (define (bool->string b)
   (if b
       "True"
@@ -284,7 +303,7 @@
     ))
 
 ;; pretty-print-list :: struct List -> String
-;; auxiliary function, returns the elementos of a list separated by spaces.
+;; auxiliary function, returns the elements of a list separated by spaces.
 (define (pretty-print-list pexp)
   (match pexp
     [(structV name variant params)
@@ -292,7 +311,7 @@
        ['Empty ""]
        ['Cons (string-append " "
                (pretty-print (first params))
-               (foldl string-append "" (map pretty-print-list (rest params)) )) ])]))
+               (foldl string-append "" (map pretty-print-list (rest params))))])]))
 
 
 #|-----------------------------
@@ -305,11 +324,6 @@ update-env! :: Sym Val Env -> Void
 (deftype Env
   (mtEnv)
   (aEnv bindings rest)) ; bindings is a list of pairs (id . val)
-
-;; Thunk :: Datatype for storing lazy evaluation data.
-;; Stores an expression with it's associated environment.
-(deftype Thunk
-  (aThunk expr env))
 
 (def empty-env  (mtEnv))
 
@@ -343,6 +357,11 @@ update-env! :: Sym Val Env -> Void
 ;; imperative update of env, adding/overring the binding for id.
 (define(update-env! id thunk env)
   (set-aEnv-bindings! env (cons (bind-value id thunk) (aEnv-bindings env))))
+
+;; Thunk :: Datatype for storing lazy evaluation data.
+;; Stores an expression with its associated environment.
+(deftype Thunk
+  (aThunk expr env))
 
 ;;;;;;;
 
@@ -382,6 +401,47 @@ update-env! :: Sym Val Env -> Void
                        {match L
                          {case {Empty} => 0}
                          {case {Cons head tail} => {+ 1 {length tail}}}}}})
+
+(def list-hd
+  ;; list-hd :: List -> Any
+  ;; Returns the head of a list.
+  '{define list-hd
+     {fun {l}
+          {match l
+            {case {Cons head tail} => head}
+            {case {Empty} => {Empty}}}}})
+
+(def list-tl
+  ;; list-tl :: list -> list
+  ;; Returns the tail of a list.
+  '{define list-tl
+     {fun {l}
+          {match l
+            {case {Cons head tail} => tail}
+            {case {Empty} => {Empty}}}}})
+
+(def list-eq
+  ;; list-eq :: list x list -> bool
+  ;; compares two lists for equality.
+  '{define list-eq {fun {l1 l2}
+                        {match l1
+                          {case {Empty} =>
+                            {match l2
+                              {case {Empty} => #t}
+                              {case {Cons head tail} => #f}}}
+                          {case {Cons head tail} =>
+                            {match l2
+                              {case {Empty} => #f}
+                              {case {Cons head2 tail2} =>
+                                {if {= head head2}
+                                    {list-eq tail tail2}
+                                    #f}}}}}}})
+
+(def list-lib (list list-data
+                    list-length
+                    list-hd
+                    list-tl
+                    list-eq))
 
 (def stream-data
   ;; Lazy Stream datatype.
@@ -488,15 +548,15 @@ update-env! :: Sym Val Env -> Void
                                 {stream-zipWith f {stream-tl l1} {stream-tl l2}}
                                 }}})
 
-(def mergesort
-  ;; mergesort :: Stream x Stream -> Stream
-  ;; Takes to ordered streams and returns a new ordered Stream with the elements of both.
-  '{define mergesort {fun {s1 s2}
+(def merge-sort
+  ;; merge-sort :: Stream x Stream -> Stream
+  ;; Takes two ordered streams and returns a new ordered Stream with the elements of both.
+  '{define merge-sort {fun {s1 s2}
                           {if {> {stream-hd s1} {stream-hd s2}}
                               {make-stream
                                {stream-hd s2}
-                               {mergesort s1 {stream-tl s2}}}
+                               {merge-sort s1 {stream-tl s2}}}
                               {make-stream
                                {stream-hd s1}
-                               {mergesort {stream-tl s1} s2}}}
+                               {merge-sort {stream-tl s1} s2}}}
                           }})
