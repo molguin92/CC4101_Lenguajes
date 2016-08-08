@@ -29,7 +29,7 @@
 ; definiciones
 (deftype Def
   (dfine name val-expr) ; define
-  (dfinst cname iexpr))
+  (dfinst cname iexpr)) ; define instance
 
 ;; --------------- DEFINICIONES PARA CLASES -------------------------------
 (deftype ClassExpr
@@ -39,7 +39,8 @@
   (method id mexpr))
 
 ;; append-instance :: ClassExpr x ClassExpr -> ClassExpr
-;; Agrega la instancia ins a la clase cls
+;; Retorna una nueva clase cuya lista de instancias incluye la instancia nueva además de todas
+;; las anteriores.
 (define (append-instance cls ins)
 
   (define (match-impl-methods idlist mlist)
@@ -58,7 +59,7 @@
 
 
 ;; get-instance :: Symbol x Any x Env -> ClassExpr
-;; Retorna la instancia asociada al valor val en la clase cname.
+;; Retorna la instancia asociada al valor val en la clase cname, en el ambiente env.
 (define (get-instance cname val env)
   
   (define (find-inst instl val)
@@ -196,6 +197,7 @@ update-env! :: Sym Val Env -> Void
 (deftype Env
   (mtEnv)
   (aEnv classes bindings rest)) ; bindings is a list of pairs (id . val)
+                                ; classes is a list list of classes
 
 (def empty-env  (mtEnv))
 
@@ -216,10 +218,12 @@ update-env! :: Sym Val Env -> Void
 (define (update-env! id val env)
   (set-aEnv-bindings! env (cons (cons id val) (aEnv-bindings env))))
 
+;; actualizacion imperativa de la lista de clases
 (define (update-env-class! cls env)
   (set-aEnv-classes! env (cons cls (aEnv-classes env))))
 
-
+;; find-class :: Symbol x Env -> ClassExpr
+;; Busca la clase en el entorno y la retorna.
 (define (find-class cname env)
 
   (define (find-class-classlist cname classes)
@@ -240,7 +244,11 @@ update-env! :: Sym Val Env -> Void
            cls
            (find-class cname rest)))]))
 
-
+;; upd-class-in-env :: ClassExpr x Env -> None
+;; Actualiza la clase en el ambiente. Si la clase no existe en este nivel, se crea, ya que esta
+;; función sólo se invoca desde la definición de una instancia, y la verificación de existencia
+;; de la clase en este nivel de ambiente o el superior ya se hizo. De esta manera, se logra
+;; sobreescribir definiciones de instancias dentro de nuevos ambientes.
 (define (upd-class-in-env cls env)
 
   (define (upd-class-classlist cls classlist)
