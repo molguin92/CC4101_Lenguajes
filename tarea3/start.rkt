@@ -34,7 +34,7 @@
 ;; --------------- DEFINICIONES PARA CLASES -------------------------------
 (deftype ClassExpr
   (classid cname mname)
-  (mclass name id-list inst-list)
+  (mclass name dfmethods id-list inst-list)
   (inst pred-expr method-list) ; instance
   (method id mexpr))
 
@@ -42,20 +42,39 @@
 ;; Retorna una nueva clase cuya lista de instancias incluye la instancia nueva además de todas
 ;; las anteriores.
 (define (append-instance cls ins)
-
-  (define (match-impl-methods idlist mlist)
+  
+  ;; marca el metodo como implementado en la checklist
+  (define (match-method-name met checklist)
+    (let ([mname (method-id met)])
+      (if (empty? checklist)
+          (error "No such method in Class definition:" mname)
+          (let ([id (car (first checklist))]
+                [impl? (cdr (first checklist))])
+             (cond
+               [(and (symbol=? id mname))
+                (cons (cons id #t) (rest checklist))]
+               [else
+                (cons (first checklist) (match-method-name met (rest checklist)))])))))
+  
+  
+  (define (match-impl-methods checklist mlist)
     (cond
-      [(and (empty? idlist) (empty? mlist))]
-      [(empty? idlist) (error "Superfluous method definition:" (first mlist))]
-      [(empty? mlist) (error "Missing declaration for" (first idlist))]
-      [(symbol=? (method-id (first mlist)) (first idlist))
-       (match-impl-methods (rest idlist) (rest mlist))]
-      [else (error "Mismatched class definition and instance!")])) 
+      [(empty? mlist)
+       (for-each (λ (x) (let ([mname (car x)]
+                              [impl? (cdr x)])
+                          (if (not impl?)
+                              (error "Missing implementation for method:" mname)
+                              #t))) checklist)]
+      [else
+       (let ([checklist (match-method-name (first mlist) checklist)])
+         (match-impl-methods checklist (rest mlist)))]))
 
-  (def (mclass name idlist inst-list) cls)
+           
+  (def (mclass name dfmethods idlist inst-list) cls)
   (def (inst pred-expr mlist) ins)
-  (match-impl-methods idlist mlist)
-  (mclass name idlist (append (list ins) inst-list)))
+  (define checklist (map (λ (x) (cons x #f)) idlist))
+  (match-impl-methods checklist mlist)
+  (mclass name dfmethods idlist (append (list (inst pred-expr (reverse mlist))) inst-list)))
 
 
 ;; get-instance :: Symbol x Any x Env -> ClassExpr
@@ -68,20 +87,20 @@
         (let ()
           (def (inst pexp mlist) (first instl))
           (if (interp (app pexp (list val)) env)
-                 (first instl)
-                 (find-inst (rest instl) val)))))
-          
-
+              (first instl)
+              (find-inst (rest instl) val)))))
+  
+  
   (let ([cls (find-class cname env)])
-    (def (mclass name idlist inslist) cls)
+    (def (mclass name dfmethods idlist inslist) cls)
     (find-inst inslist val)))
-    
+
 
 
 ;; get-method :: ClassExpr(inst) x Symbol -> Expr
 ;; Retorna el metodo llamado name en la instancia ins.
 (define (get-method ins name)
-
+  
   (define (find-method mlist name)
     (match mlist
       [(? empty?) (error "No such method:" name)]
@@ -90,7 +109,7 @@
        (if (symbol=? id name)
            mexpr
            (find-method (rest mlist) name))]))
-
+  
   (def (inst pexp mlist) ins)
   (find-method mlist name))        
 ;;----------------------------------------------     
@@ -112,20 +131,39 @@
      (lcal (map parse-def defs) (parse body))] 
     [(list f args ...) (app (parse f) (map parse args))]))
 
+
+(define (parse-method mexpr)
+  (match mexpr
+    [(list mname mbody) (method mname (parse mbody))]))
+
 ; parse-def :: s-expr -> Def
 (define (parse-def s-expr)
-
-  (define (parse-method mexpr)
-    (match mexpr
-      [(list mname mbody) (method mname (parse mbody))]))
   
   (match s-expr
     [(list 'define id val-expr) (dfine id (parse val-expr))]
-    [(list 'define-class name methods ...) (mclass name methods '())]
+    [(list 'define-class name methods ...) (parse-class-def name methods)]
     [(list 'define-instance cname pred methods ...)
      (dfinst cname
              (inst (parse pred) (map parse-method methods)))]))
+
+(define (parse-class-def cname methods)
   
+  (define (extract-method-id met)
+    (match met
+      [(? symbol?) met]
+      [(method id mexpr) id]))
+
+  (define (extract-default-methods mlist)
+    (cond
+      [(empty? mlist) '()]
+      [(symbol? (first mlist))
+       (extract-default-methods (rest mlist))]
+      [else (cons (parse-method (first mlist)) (extract-default-methods (rest mlist)))]))
+
+  (let ([dmethods (extract-default-methods methods)])
+    (mclass cname dmethods (map extract-method-id methods) '())))
+    
+
 
 ;; interp :: Expr Env -> number/procedure/Struct
 (define (interp expr env)
@@ -170,11 +208,11 @@
   
   (define (bind-methods-to-class cname mlist)
     (for-each (λ (method-id) (update-env! method-id (classid cname method-id) env)) mlist))
-    
+  
   (match d
     [(dfine id val-expr)
      (update-env! id (interp val-expr env) env)]
-    [(mclass name methods inst)
+    [(mclass name dfmethods methods inst)
      (bind-methods-to-class name methods)
      (update-env-class! d env)]
     [(dfinst cname iexpr)
@@ -197,7 +235,7 @@ update-env! :: Sym Val Env -> Void
 (deftype Env
   (mtEnv)
   (aEnv classes bindings rest)) ; bindings is a list of pairs (id . val)
-                                ; classes is a list list of classes
+; classes is a list list of classes
 
 (def empty-env  (mtEnv))
 
@@ -225,12 +263,12 @@ update-env! :: Sym Val Env -> Void
 ;; find-class :: Symbol x Env -> ClassExpr
 ;; Busca la clase en el entorno y la retorna.
 (define (find-class cname env)
-
+  
   (define (find-class-classlist cname classes)
     (if (empty? classes)
         #f
         (match (first classes)
-          [(mclass name idlist inslist)
+          [(mclass name dfmethods idlist inslist)
            (if (symbol=? cname name)
                (first classes)
                (find-class-classlist cname (rest classes)))]
@@ -250,12 +288,12 @@ update-env! :: Sym Val Env -> Void
 ;; de la clase en este nivel de ambiente o el superior ya se hizo. De esta manera, se logra
 ;; sobreescribir definiciones de instancias dentro de nuevos ambientes.
 (define (upd-class-in-env cls env)
-
+  
   (define (upd-class-classlist cls classlist)
     (if (empty? classlist)
         #f
         (match (first classlist)
-          [(mclass name idlist inslist)
+          [(mclass name dfmethods idlist inslist)
            (if (symbol=? name (mclass-name cls))
                (cons cls (rest classlist))
                (let ([res (upd-class-classlist cls (rest classlist))])
@@ -264,10 +302,10 @@ update-env! :: Sym Val Env -> Void
                      classlist)))]
           [else
            (let ([res (upd-class-classlist cls (rest classlist))])
-                 (if res
-                     (cons (first classlist) res)
-                     classlist))])))  
-
+             (if res
+                 (cons (first classlist) res)
+                 classlist))])))  
+  
   
   (match env
     [(mtEnv) (error "No such Class:" (mclass-name cls))]

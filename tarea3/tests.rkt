@@ -30,49 +30,67 @@ Some tarea 3's tests
 |#
 
 (test (run '{local {{define x bool?}} 
-           {x 1}}) #f)
+              {x 1}}) #f)
 
- (test (run '(local
-    ((define-class Size size)
-     (define-instance Size number?
-       [size (fun (x) x)])
-     (define-instance Size string?
-       [size string-length]))
-  (+ (size 10) (size "hola"))))
-  14)
-
-(test 
-(run '(local((define-class Show show)
-     (define-instance Show number?
-       [show number->string])
-     (define-instance Show string?
-       [show (fun (x) x)])
-     (define-instance Show bool?
-       [show (fun (x) (if x "true" "false"))])
-     (define-class Size size)
-     (define-instance Size number?
-       [size (fun (x) x)])
-     (define-instance Size string?
-       [size string-length])
-     (define-instance Show (fun (v) (> (size v) 100))
-       [show (fun (x) "big data!!")]))
-(string-append (show 200) (show "this is a very long string that should be longer than a hundred characters, so it should be a bit longer still"))))
-"big data!!big data!!")
+(test (run '(local
+              ((define-class Size size)
+               (define-instance Size number?
+                 [size (fun (x) x)])
+               (define-instance Size string?
+                 [size string-length]))
+              (+ (size 10) (size "hola"))))
+      14)
 
 (test 
-(run '(local ((define-class C foo bar)
-        (define-instance C number?
-          [foo (fun (x) (+ x 1))]
-          [bar (fun (x) (- x 1))]))
-  (+ (foo 3)
-     (bar 4)
-     (local ((define-instance C number?
-               [foo (fun (x) (* x 2))]
-               [bar (fun (x) (- x 2))]))
-       (+ (foo 3)
-          (bar 4)))
-     (foo 3))))
-19)
+ (run '(local((define-class Show show)
+              (define-instance Show number?
+                [show number->string])
+              (define-instance Show string?
+                [show (fun (x) x)])
+              (define-instance Show bool?
+                [show (fun (x) (if x "true" "false"))])
+              (define-class Size size)
+              (define-instance Size number?
+                [size (fun (x) x)])
+              (define-instance Size string?
+                [size string-length])
+              (define-instance Show (fun (v) (> (size v) 100))
+                [show (fun (x) "big data!!")]))
+         (string-append (show 200) (show "this is a very long string that should be longer than a hundred characters, so it should be a bit longer still"))))
+ "big data!!big data!!")
+
+(test 
+ (run '(local ((define-class C foo bar)
+               (define-instance C number?
+                 [foo (fun (x) (+ x 1))]
+                 [bar (fun (x) (- x 1))]))
+         (+ (foo 3)
+            (bar 4)
+            (local ((define-instance C number?
+                      [foo (fun (x) (* x 2))]
+                      [bar (fun (x) (- x 2))]))
+              (+ (foo 3)
+                 (bar 4)))
+            (foo 3))))
+ 19)
+
+
+;; implementations with interdependent methods:
+(test
+ (run '(local ((define-class Plas foo bar)
+               (define-instance Plas number?
+                 [foo (fun (x) (* x 2))]
+                 [bar (fun (x) (+ 1 (foo x)))]))
+         (bar 20)))
+ 41)
+
+(test
+ (run '(local ((define-class Plas foo bar)
+               (define-instance Plas number?
+                 [foo (fun (x) (bar x))]
+                 [bar (fun (x) (* 2 x))]))
+         (foo 20)))
+ 40)
 #|
 (test (run '(local ((define-class Comp 
            same? 
