@@ -1,4 +1,14 @@
 #lang play
+;; Tarea 3 CC4101 - Lenguajes de Programación
+;; Alumno: Manuel Olguín
+;; Profesor: Eric Tanter
+;; Aux: Fabián Mosso
+;;
+;; Archivo principal de la definición del lenguaje MiniScheme+.
+
+
+;; safectx? :: parámetro utilizado para verificar si el contexto es seguro o no.
+(define safectx? (make-parameter #t))
 
 #|
 <expr> ::= <num>
@@ -9,6 +19,7 @@
          | {fun {<id>*}}  <expr>}
          | {<expr> <expr>*}
          | {local {<def>*} <expr>}
+         | {untrusted <expr>}
 
 <def>  ::= {define <id> <expr>}
          | {define-class <id> <id>*}
@@ -24,7 +35,8 @@
   (app fun-expr arg-expr-list)
   (prim p) 
   (fun id body)
-  (lcal defs body))
+  (lcal defs body)
+  (untrust body)) ; para contextos inseguros
 
 ; definiciones
 (deftype Def
@@ -33,10 +45,10 @@
 
 ;; --------------- DEFINICIONES PARA CLASES -------------------------------
 (deftype ClassExpr
-  (classid cname mname)
-  (mclass name dfmethods id-list inst-list)
+  (classid cname mname) ; utilizado para relacionar un metodo a una clase en el env
+  (mclass name dfmethods id-list inst-list) ; la clase propiamente tal
   (inst pred-expr method-list) ; instance
-  (method id mexpr))
+  (method id mexpr)) ; metodo
 
 ;; append-instance :: ClassExpr x ClassExpr -> ClassExpr
 ;; Retorna una nueva clase cuya lista de instancias incluye la instancia nueva además de todas
@@ -44,6 +56,7 @@
 (define (append-instance cls ins)
   
   ;; marca el metodo como implementado en la checklist
+  ;; recorre la checklist recursivamente hasta encontrar el metodo, o fallar.
   (define (match-method-name met checklist)
     (let ([mname (method-id met)])
       (if (empty? checklist)
@@ -60,6 +73,7 @@
   (define (match-impl-methods checklist mlist)
     (cond
       [(empty? mlist)
+       ; verificamos que todos los metodos tengan implementacion
        (for-each (λ (x) (let ([mname (car x)]
                               [impl? (cdr x)])
                           (if (not impl?)
@@ -72,7 +86,9 @@
            
   (def (mclass name dfmethods idlist inst-list) cls)
   (def (inst pred-expr mlist) ins)
+  ; creamos nuestra checklist de metodos a implementar:
   (define checklist (map (λ (x) (cons x #f)) idlist))
+  ; agregamos los metodos por defecto a la instancia
   (define extmlist (append dfmethods mlist))
   (match-impl-methods checklist extmlist)
   (mclass name
@@ -126,7 +142,8 @@
     [(? boolean?) (bool s-expr)]
     [(? string?) (str s-expr)]
     [(? (λ (x)(assq x *primitives*))) (prim (λ (args) (apply (cadr (assq s-expr *primitives*)) args)))]
-    [(? symbol?)  (id s-expr)]    
+    [(? symbol?)  (id s-expr)]
+    [(list 'untrusted body) (untrust (parse body))] ; contextos inseguros
     [(list 'if c t f) (ifc (parse c) (parse t) (parse f))]
     [(list 'fun xs b) (fun xs (parse b))]
     [(list 'with (list (list x e) ...) b)
@@ -135,12 +152,13 @@
      (lcal (map parse-def defs) (parse body))] 
     [(list f args ...) (app (parse f) (map parse args))]))
 
-
+;; parse-method :: s-expr -> ClassExpr
+;; parsea metodos asociados a instancias.
 (define (parse-method mexpr)
   (match mexpr
     [(list mname mbody) (method mname (parse mbody))]))
 
-; parse-def :: s-expr -> Def
+; parse-def :: s-expr -> Def/ClassExpr
 (define (parse-def s-expr)
   
   (match s-expr
@@ -150,8 +168,10 @@
      (dfinst cname
              (inst (parse pred) (map parse-method methods)))]))
 
+;; parse-class-def :: Symbol x List -> ClassExpr
+;; parsea la declaración de una clase y sus métodos, incluyendo métodos por defecto.
 (define (parse-class-def cname methods)
-  
+
   (define (extract-method-id met)
     (match met
       [(? symbol?) met]
@@ -205,10 +225,46 @@
     [(lcal defs body)
      (def new-env (extend-env '() '() env))            
      (for-each (λ (d) (interp-def d new-env)) defs) 
-     (interp body new-env)]))
+     (interp body new-env)]
+    [(untrust body) (parameterize ([safectx? #f]) ; contextos inseguros!
+                      (interp body env))]))
 
-; interp-def :: Def Env -> Void
+; interp-def :: Def/ClassExpr Env -> Void
+;; parsea las definiciones.
 (define (interp-def d env)
+  
+  ;; upd-class-in-env :: ClassExpr x Env -> None
+  ;; Actualiza la clase en el ambiente. Si la clase no existe en este nivel, se crea, ya que esta
+  ;; función sólo se invoca desde la definición de una instancia, y la verificación de existencia
+  ;; de la clase en este nivel de ambiente o el superior ya se hizo. De esta manera, se logra
+  ;; sobreescribir definiciones de instancias dentro de nuevos ambientes.
+  (define (upd-class-in-env cls env)
+    
+    (define (upd-class-classlist cls classlist)
+      (if (empty? classlist)
+          #f
+          (match (first classlist)
+            [(mclass name dfmethods idlist inslist)
+             (if (symbol=? name (mclass-name cls))
+                 (cons cls (rest classlist))
+                 (let ([res (upd-class-classlist cls (rest classlist))])
+                   (if res
+                       (cons (first classlist) res)
+                       classlist)))]
+            [else
+             (let ([res (upd-class-classlist cls (rest classlist))])
+               (if res
+                   (cons (first classlist) res)
+                   classlist))])))  
+    
+    
+    (match env
+      [(mtEnv) (error "No such Class:" (mclass-name cls))]
+      [(aEnv classes bindings rest)
+       (let ([res (upd-class-classlist cls classes)])
+         (if res
+             (set-aEnv-classes! env res)
+             (set-aEnv-classes! env (cons cls classes))))]))
   
   (define (bind-methods-to-class cname mlist)
     (for-each (λ (method-id) (update-env! method-id (classid cname method-id) env)) mlist))
@@ -238,19 +294,21 @@ update-env! :: Sym Val Env -> Void
 |#
 (deftype Env
   (mtEnv)
-  (aEnv classes bindings rest)) ; bindings is a list of pairs (id . val)
-; classes is a list list of classes
+  (aEnv classes bindings rest))
+;; se modificó el ambiente para además poder almacenar clases en él
 
 (def empty-env  (mtEnv))
 
 (define (env-lookup id env)
-  (match env
-    [(mtEnv) (error 'env-lookup "no binding for identifier: ~a" id)]
-    [(aEnv classes bindings rest)
-     (def binding (assoc id bindings))
-     (if binding
-         (cdr binding)
-         (env-lookup id rest))]))
+  (if (symbol=? id 'untrusted-ctx?)
+      (not (safectx?))
+      (match env
+        [(mtEnv) (error 'env-lookup "no binding for identifier: ~a" id)]
+        [(aEnv classes bindings rest)
+         (def binding (assoc id bindings))
+         (if binding
+             (cdr binding)
+             (env-lookup id rest))])))
 
 (define (extend-env ids vals env)
   (aEnv '() (map cons ids vals) ; zip to get list of pairs (id . val)
@@ -285,39 +343,6 @@ update-env! :: Sym Val Env -> Void
        (if cls
            cls
            (find-class cname rest)))]))
-
-;; upd-class-in-env :: ClassExpr x Env -> None
-;; Actualiza la clase en el ambiente. Si la clase no existe en este nivel, se crea, ya que esta
-;; función sólo se invoca desde la definición de una instancia, y la verificación de existencia
-;; de la clase en este nivel de ambiente o el superior ya se hizo. De esta manera, se logra
-;; sobreescribir definiciones de instancias dentro de nuevos ambientes.
-(define (upd-class-in-env cls env)
-  
-  (define (upd-class-classlist cls classlist)
-    (if (empty? classlist)
-        #f
-        (match (first classlist)
-          [(mclass name dfmethods idlist inslist)
-           (if (symbol=? name (mclass-name cls))
-               (cons cls (rest classlist))
-               (let ([res (upd-class-classlist cls (rest classlist))])
-                 (if res
-                     (cons (first classlist) res)
-                     classlist)))]
-          [else
-           (let ([res (upd-class-classlist cls (rest classlist))])
-             (if res
-                 (cons (first classlist) res)
-                 classlist))])))  
-  
-  
-  (match env
-    [(mtEnv) (error "No such Class:" (mclass-name cls))]
-    [(aEnv classes bindings rest)
-     (let ([res (upd-class-classlist cls classes)])
-       (if res
-           (set-aEnv-classes! env res)
-           (set-aEnv-classes! env (cons cls classes))))]))
 
 ;;;;;;;
 

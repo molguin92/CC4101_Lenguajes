@@ -1,5 +1,12 @@
 #lang plai
 
+;; Tarea 3 CC4101 - Lenguajes de Programación
+;; Alumno: Manuel Olguín
+;; Profesor: Eric Tanter
+;; Aux: Fabián Mosso
+;;
+;; Suite de tests.
+
 (require "start.rkt")
 (print-only-errors #f)
 ;; Test sub-module.
@@ -59,6 +66,15 @@ Some tarea 3's tests
          (string-append (show 200) (show "this is a very long string that should be longer than a hundred characters, so it should be a bit longer still"))))
  "big data!!big data!!")
 
+; instance predicates can be previously defined functions:
+(test
+ (run '(local ((define-class C foo)
+              (define a (fun (x) (bool? x)))
+              (define-instance C a
+                [foo (fun (x) "hello darkness my old friend")]))
+        (foo #t)))
+ "hello darkness my old friend")
+
 (test 
  (run '(local ((define-class C foo bar)
                (define-instance C number?
@@ -74,6 +90,16 @@ Some tarea 3's tests
             (foo 3))))
  19)
 
+;; multiple definitions of same method (in an instance) overwrite each other!
+(test
+ (run '(local ((define-class Plas foo)
+               (define-instance Plas number?
+                 [foo (fun (x) x)]
+                 [foo (fun (x) (+ 1 x))]
+                 [foo (fun (x) (* 2 x))])) ; <-- The final one is the one that is used.
+         (foo 20)))
+ 40)
+
 
 ;; implementations with interdependent methods:
 (test
@@ -81,6 +107,15 @@ Some tarea 3's tests
                (define-instance Plas number?
                  [foo (fun (x) (* x 2))]
                  [bar (fun (x) (+ 1 (foo x)))]))
+         (bar 20)))
+ 41)
+
+;; the order of the methods is irrelevant:
+(test
+ (run '(local ((define-class Plas foo bar)
+               (define-instance Plas number?
+                 [bar (fun (x) (+ 1 (foo x)))]
+                 [foo (fun (x) (* x 2))]))
          (bar 20)))
  41)
 
@@ -92,6 +127,7 @@ Some tarea 3's tests
          (foo 20)))
  40)
 
+;; default methods:
 (test (run '(local ((define-class Comp 
            same? 
            smaller?
@@ -109,15 +145,52 @@ Some tarea 3's tests
        (same? "hola" "hola")
        (greater? 10 2))))
 #t)
-#|
+
+;; default methods can be overwritten:
+(test
+ (run '(local ((define-class YOLO
+                 [SWAG (fun (x) #t)]
+                 Wololo)
+               (define-instance YOLO number?
+                 [SWAG (fun (x) #f)]
+                 [Wololo (fun (x) #t)]))
+         (SWAG 1)))
+ #f)
+
+;; default methods don't work without at least one active instance:
+(test/exn
+ (run '(local ((define-class YOLO
+                 [SWAG (fun (x) #t)]))
+         (SWAG 1)))
+ "No implementation")
+
+;; unsafe context:
 (test 
-(run '(local ((define-class Server service1 service2)
-(define-instance Server (fun (x) #t)
-  [service1 (fun (x) "serv1: full quality")]
-  [service2 (fun (x) "serv2: ok")])
-(define-instance Server (fun (x) untrusted-ctx?)
-  [service1 (fun (x) "serv1: low quality")]
-  [service2 (fun (x) "serv2: denied")]))
-     (untrusted (service2 2)))) 
-"serv2: denied")
-|#
+ (run '(local ((define-class Server service1 service2)
+               (define-instance Server (fun (x) #t)
+                 [service1 (fun (x) "serv1: full quality")]
+                 [service2 (fun (x) "serv2: ok")])
+               (define-instance Server (fun (x) untrusted-ctx?)
+                 [service1 (fun (x) "serv1: low quality")]
+                 [service2 (fun (x) "serv2: denied")]))
+         (untrusted (service2 2)))) 
+ "serv2: denied")
+
+(test 
+ (run '(local ((define-class Server service1 service2)
+               (define-instance Server (fun (x) #t)
+                 [service1 (fun (x) "serv1: full quality")]
+                 [service2 (fun (x) "serv2: ok")])
+               (define-instance Server (fun (x) untrusted-ctx?)
+                 [service1 (fun (x) "serv1: low quality")]
+                 [service2 (fun (x) "serv2: denied")]))
+         (service2 2))) 
+ "serv2: ok")
+
+;; can also be used without local
+(test
+ (run '(untrusted untrusted-ctx?))
+ #t)
+(test
+ (run 'untrusted-ctx?)
+ #f)
