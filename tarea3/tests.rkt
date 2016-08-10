@@ -91,7 +91,7 @@ Some tarea 3's tests
                  [bar (fun (x) (* 2 x))]))
          (foo 20)))
  40)
-#|
+
 (test (run '(local ((define-class Comp 
            same? 
            smaller?
@@ -109,7 +109,7 @@ Some tarea 3's tests
        (same? "hola" "hola")
        (greater? 10 2))))
 #t)
-
+#|
 (test 
 (run '(local ((define-class Server service1 service2)
 (define-instance Server (fun (x) #t)

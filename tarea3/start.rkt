@@ -73,8 +73,12 @@
   (def (mclass name dfmethods idlist inst-list) cls)
   (def (inst pred-expr mlist) ins)
   (define checklist (map (λ (x) (cons x #f)) idlist))
-  (match-impl-methods checklist mlist)
-  (mclass name dfmethods idlist (append (list (inst pred-expr (reverse mlist))) inst-list)))
+  (define extmlist (append dfmethods mlist))
+  (match-impl-methods checklist extmlist)
+  (mclass name
+          dfmethods
+          idlist
+          (append (list (inst pred-expr (reverse extmlist))) inst-list)))
 
 
 ;; get-instance :: Symbol x Any x Env -> ClassExpr
@@ -151,7 +155,7 @@
   (define (extract-method-id met)
     (match met
       [(? symbol?) met]
-      [(method id mexpr) id]))
+      [(list id mexpr) id]))
 
   (define (extract-default-methods mlist)
     (cond
